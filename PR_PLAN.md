@@ -21,25 +21,25 @@ Perfect — here’s a **PR implementation plan** you can drop straight into the
 
 * [x] Tag repo: `git tag baseline-demo`.
 * [x] Confirm `npm run dev` works.
-* [ ] Confirm `/api/session` returns ephemeral token JSON.
+* [x] Confirm `/api/session` returns ephemeral token JSON.
 * QC: `curl -s http://localhost:3000/api/session | jq '.client_secret'` returns token.
 
 ---
 
 ## ✅ Step 2 — Database Bootstrap
 
-* [ ] Add `prisma/schema.prisma` with models:
+* [x] Add `prisma/schema.prisma` with models:
 
   * `User`, `OAuthAccount`, `UserSettings`, `CallerMapping`, `AuditLog`.
-* [ ] Add `src/lib/db.ts` (Prisma client).
-* [ ] Run `npx prisma migrate dev`.
+* [x] Add `src/lib/db.ts` (Prisma client).
+* [x] Run `npx prisma migrate dev`.
 * QC: Run `node scripts/smoke-db.cjs` to insert/read a fake user.
 
 ---
 
 ## ✅ Step 3 — Session Cookie
 
-* [ ] Add `src/lib/session.ts` (signed `sid` cookie utilities).
+* [] Add `src/lib/session.ts` (signed `sid` cookie utilities).
 * [ ] On login (temporary dev route), set `sid`.
 * [ ] `/api/session` continues to work **without** `sid`.
 * QC:
