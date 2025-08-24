@@ -12,3 +12,15 @@ build = ["sh", "-c", "npm run build"]
 [[ports]]
 localPort = 3000
 externalPort = 80
+
+[workflows]
+runButton = "Dev Server"
+
+[[workflows.workflow]]
+name = "Dev Server"
+author = 26597001
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
