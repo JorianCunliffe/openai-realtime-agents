@@ -83,3 +83,14 @@ model AuditLog {
 
   @@index([userId, createdAt])
 }
+
+model Session {
+  /// Use the exact string you set in the `sid` cookie (no default here on purpose).
+  id        String   @id
+  /// Your app’s stable user identifier (string). Can be a user table FK later.
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}

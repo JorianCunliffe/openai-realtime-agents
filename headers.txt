@@ -1,0 +1,13 @@
+HTTP/2 307 
+content-length: 0
+content-type: text/html
+date: Mon, 25 Aug 2025 07:45:36 GMT
+location: https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent&scope=openid%20email%20profile%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar&state=eyJ2IjoxLCJjc3JmIjoiOWIwMTVlYjYwM2NiN2VlNTM0ZWU3NzBlMTNiYjViOWMiLCJ1c2VySWQiOiIyOWRjNWIxMS05OWJlLTQ1MmEtYjUzYi1hZDZmNGNiZDEyYzkifQ&response_type=code&client_id=554614020582-le4bd8jpmajqcceslp83fk401ob54kmc.apps.googleusercontent.com&redirect_uri=https%3A%2F%2Fopenai-realtime-agents-joriancunliffe.replit.app%2Fapi%2Fauth%2Fgoogle%2Fcallback
+server: Google Frontend
+set-cookie: g_csrf=9b015eb603cb7ee534ee770e13bb5b9c; Path=/; Expires=Mon, 25 Aug 2025 07:55:36 GMT; Max-Age=600; Secure; HttpOnly; SameSite=none
+strict-transport-security: max-age=63072000; includeSubDomains
+vary: RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Router-Segment-Prefetch
+x-cloud-trace-context: 0279adc287128b71d591d2f078985f73
+via: 1.1 google
+alt-svc: h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+

@@ -39,15 +39,17 @@ export function newSessionId(): string {
 }
 
 /** Read and verify the current request's sid cookie. Returns the id or null. */
-export function getSessionId(): string | null {
-  const raw = cookies().get(COOKIE_NAME)?.value;
+export async function getSessionId(): Promise<string | null> {
+  const ck = await cookies();
+  const raw = ck.get(COOKIE_NAME)?.value;
   return verify(raw);
 }
 
 /** Set a signed sid cookie for the current response. */
-export function setSessionId(id: string) {
+export async function setSessionId(id: string): Promise<void> {
   const value = `${id}.${sign(id)}`;
-  cookies().set({
+  const ck = await cookies();
+  ck.set({
     name: COOKIE_NAME,
     value,
     httpOnly: true,
@@ -59,6 +61,7 @@ export function setSessionId(id: string) {
 }
 
 /** Clear the sid cookie. */
-export function clearSession() {
-  cookies().delete(COOKIE_NAME);
+export async function clearSession(): Promise<void> {
+  const ck = await cookies();
+  ck.delete(COOKIE_NAME);
 }

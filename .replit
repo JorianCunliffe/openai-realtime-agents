@@ -3,6 +3,7 @@ run = "npm run start"
 
 [nix]
 channel = "stable-24_05"
+packages = ["psmisc"]
 
 [deployment]
 run = ["sh", "-c", "npm run start"]
@@ -16,6 +17,10 @@ externalPort = 80
 [[ports]]
 localPort = 3001
 externalPort = 3001
+
+[[ports]]
+localPort = 3002
+externalPort = 3002
 
 [workflows]
 runButton = "Dev Server"
