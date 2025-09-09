@@ -84,14 +84,6 @@ Perfect — here’s a **PR implementation plan** you can drop straight into the
 * [ ] Else, preserve old behavior.
 * [ ] Optionally, accept `userId` header for server-side (Twilio).
 * QC:
-
-  * Default demo scenarios still run unchanged.
-  * With `sid`, agent can fetch/create calendar events on request.
-
-Yes 👍 — now that we’ve added the **Twilio voice + WS server stubs**, the `PR_PLAN.md` should be updated so your team knows exactly where those new files live and how they’re run in Replit.
-
-Here’s the **updated PR plan section** (changes only where Twilio is concerned):
-
 ---
 
 ## ✅ Step 7 — Twilio Voice & Stream

@@ -71,3 +71,23 @@ export const googleCalendarService = {
     return res.data.items ?? [];
   },
 };
+
+export async function getFreeBusy(
+  auth: any,
+  params: { timeMin: string; timeMax: string; timeZone?: string }
+) {
+  const cal = google.calendar({ version: "v3", auth });
+  const res = await cal.freebusy.query({
+    requestBody: {
+      timeMin: params.timeMin,
+      timeMax: params.timeMax,
+      timeZone: params.timeZone,
+      items: [{ id: "primary" }],
+    },
+  });
+  const fb = res.data.calendars?.primary;
+  return {
+    busy: fb?.busy || [],
+    errors: fb?.errors || [],
+  };
+}
