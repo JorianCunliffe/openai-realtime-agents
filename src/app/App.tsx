@@ -19,6 +19,7 @@ import { useTranscript } from "@/app/contexts/TranscriptContext";
 import { useEvent } from "@/app/contexts/EventContext";
 import { useRealtimeSession } from "./hooks/useRealtimeSession";
 import { createModerationGuardrail } from "@/app/agentConfigs/guardrails";
+import { getEphemeralSessionPayload } from "@/lib/realtime/bootstrapClient";
 
 // Agent configs
 import { allAgentSets, defaultAgentSetKey } from "@/app/agentConfigs";
@@ -104,6 +105,8 @@ function App() {
 
   const [sessionStatus, setSessionStatus] =
     useState<SessionStatus>("DISCONNECTED");
+  // Optional: observe attachCalendar/hasSid/hasUserId coming from /api/session
+  const [sessionMeta, setSessionMeta] = useState<any>(null);
 
   const [isEventsPaneExpanded, setIsEventsPaneExpanded] =
     useState<boolean>(true);
@@ -179,19 +182,18 @@ function App() {
   }, [isPTTActive]);
 
   const fetchEphemeralKey = async (): Promise<string | null> => {
-    logClientEvent({ url: "/session" }, "fetch_session_token_request");
-    const tokenResponse = await fetch("/api/session");
-    const data = await tokenResponse.json();
-    logServerEvent(data, "fetch_session_token_response");
-
-    if (!data.client_secret?.value) {
-      logClientEvent(data, "error.no_ephemeral_key");
-      console.error("No ephemeral key provided by the server");
+    try {
+      logClientEvent({ url: "/session" }, "fetch_session_token_request");
+      const { token, meta, raw } = await getEphemeralSessionPayload();
+      setSessionMeta(meta);
+      logServerEvent(raw, "fetch_session_token_response");
+      return token;
+    } catch (err: any) {
+      logClientEvent({ error: String(err?.message || err) }, "error.no_ephemeral_key");
+      console.error("No ephemeral key provided by the server:", err);
       setSessionStatus("DISCONNECTED");
       return null;
     }
-
-    return data.client_secret.value;
   };
 
   const connectToRealtime = async () => {
@@ -226,6 +228,10 @@ function App() {
             addTranscriptBreadcrumb,
           },
         });
+        // Optional: quick visibility in the logs
+        if (sessionMeta) {
+          console.log("[session meta]", sessionMeta);
+        }
       } catch (err) {
         console.error("Error connecting via SDK:", err);
         setSessionStatus("DISCONNECTED");
