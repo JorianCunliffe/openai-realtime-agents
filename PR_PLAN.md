@@ -84,6 +84,20 @@ Perfect — here’s a **PR implementation plan** you can drop straight into the
 * [ ] Else, preserve old behavior.
 * [ ] Optionally, accept `userId` header for server-side (Twilio).
 * QC:
+* // e.g., in a page or component
+import { bootstrapRealtimeClient } from "@/lib/realtime/bootstrapClient";
+
+async function startAgent() {
+  const { session, meta } = await bootstrapRealtimeClient({
+    // Optional overrides:
+    // sessionOptions: { turn_detection: { type: "server_vad" }, voice: "verse" },
+  });
+
+  console.log("calendar tools attached:", meta?.attachCalendar);
+  // from here: drive your UI, send/receive events with `session`
+}
+
+
 ---
 
 ## ✅ Step 7 — Twilio Voice & Stream
