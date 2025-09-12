@@ -53,7 +53,11 @@ async function createRealtimeSession(ctx: UserCtx): Promise<{
   const commitNow = () => {
     if (!open || !hasAudioInBuffer) return;
     hasAudioInBuffer = false;
-    try { rt.send(JSON.stringify({ type: "input_audio_buffer.commit" })); } catch {}
+    try {
+      rt.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+      // Prompt the model to produce audio output now
+      rt.send(JSON.stringify({ type: "response.create" }));
+    } catch {}
   };
   const scheduleCommit = () => {
     if (silenceTimer) clearTimeout(silenceTimer);
