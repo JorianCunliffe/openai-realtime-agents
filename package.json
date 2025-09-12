@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n NEXT,WS \"next dev\" \"npx tsx scripts/twilio-ws-server.ts\"",
-    "build": "next build && esbuild scripts/twilio-ws-server.ts --platform=node --bundle --outfile=scripts/twilio-ws-server.js",
-    "start": "concurrently -n NEXT,WS \"next start -p 3000\" \"node scripts/twilio-ws-server.js\"",
+    "dev": "tsx scripts/next-ws-server.ts",
+    "build": "next build && esbuild scripts/next-ws-server.ts --platform=node --bundle --packages=external --outfile=scripts/next-ws-server.js",
+    "start": "NODE_ENV=production node scripts/next-ws-server.js",
+    "lint": "next lint",
     "ws:dev": "node -r ts-node/register/transpile-only scripts/twilio-ws-server.ts",
-    "ws:start": "node scripts/twilio-ws-server.js",
-    "lint": "next lint"
+    "ws:start": "node scripts/twilio-ws-server.js"
   },
   "dependencies": {
     "@openai/agents": "^0.0.5",
@@ -33,6 +33,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "tsx": "^4.19.0",
     "esbuild": "^0.25.9",
     "eslint": "^9",
     "eslint-config-next": "15.1.4",

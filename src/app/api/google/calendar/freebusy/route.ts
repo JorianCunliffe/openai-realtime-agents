@@ -1,6 +1,6 @@
 // src/app/api/google/calendar/freebusy/route.ts (Next.js App Router)
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthorizedClient } from "@/lib/auth/google"; // your helper
+import { getAuthorizedGoogleClient } from "@/lib/auth/google"; // your helper
 import { getFreeBusy } from "@/services/googleCalendar";
 
 export async function POST(req: NextRequest) {
@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     const userId = req.headers.get("x-user-id") || undefined;
 
     // resolve user either from sid or userId (server)
-    const auth = await getAuthorizedClient({ sid, userId });
+    const auth = await getAuthorizedGoogleClient({ sid, userId });
     if (!auth) {
       return NextResponse.json({ ok: false, message: "Google not connected" }, { status: 401 });
     }
