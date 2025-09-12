@@ -130,29 +130,33 @@ async function main() {
           streamSid = s.streamSid;
           console.log(`[Twilio][start] callSid=${s.start.callSid} streamSid=${s.streamSid}`);
           session = await createRealtimeSession(userCtx);
+
+          // 🔊 Model → Twilio: forward OpenAI audio deltas back to the caller
+          session.socket.on("message", (raw) => {
+            try {
+              const evt = JSON.parse(raw.toString());
+              if (evt.type === "response.output_audio.delta" && evt.delta && streamSid) {
+                ws.send(JSON.stringify({
+                  event: "media",
+                  streamSid,
+                  media: { payload: evt.delta } // base64 μ-law
+                }));
+              }
+            } catch (e) {
+              console.error("[Realtime] parse message err", e);
+            }
+          });
           break;
         }
         case "media": {
           const m = msg as MediaFrame;
-          // Forward to your model (still stubbed)
+          // Twilio → Model (append μ-law base64 audio)
           session?.sendAudio(m.media.payload);
-
-          // 🔊 Loopback to Twilio so the caller hears themselves (proof of life)
-          if (streamSid) {
-            const echo = {
-              event: "media",
-              streamSid,
-              media: { payload: m.media.payload }, // base64 PCMU back to Twilio
-            };
-            ws.send(JSON.stringify(echo));
-          }
           break;
         }
-        case "mark": {
-          const mk = msg as MarkFrame;
-          console.log(`[Twilio][mark] ${mk.mark.name}`);
+        case "mark":
+          // optional: handle marks if you need timing
           break;
-        }
         case "stop": {
           const st = msg as StopFrame;
           console.log(`[Twilio][stop] streamSid=${st.streamSid}`);
@@ -161,8 +165,12 @@ async function main() {
           ws.close(1000, "done");
           break;
         }
+        case "connected":
+        case "dtmf":
+          // ignore
+          break;
         default:
-          console.log("[Twilio] unknown event");
+          console.log("[Twilio] unknown event", (msg as any).event);
       }
     });
 
