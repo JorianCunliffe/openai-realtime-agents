@@ -27,12 +27,64 @@ type StopFrame = { event: "stop"; streamSid: string };
 type MarkFrame = { event: "mark"; mark: { name: string }; streamSid: string };
 type AnyTwilioFrame = StartFrame | MediaFrame | StopFrame | MarkFrame;
 
-// Stub your realtime session here
-async function createRealtimeSession(ctx: UserCtx): Promise<{ close: () => Promise<void>; sendAudio: (b64: string) => void }> {
-  console.log(`[Realtime] session for userId=${ctx.userId} callSid=${ctx.callSid} streamSid=${ctx.streamSid}`);
+// --- OpenAI Realtime session factory ---
+async function createRealtimeSession(ctx: UserCtx): Promise<{
+  socket: WebSocket;
+  close: () => Promise<void>;
+  sendAudio: (b64: string) => void;
+}> {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY missing");
+  }
+  const rt = new WebSocket(
+    `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`,
+    { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
+  );
+
+  let open = false;
+  let hasAudioInBuffer = false;
+  let silenceTimer: NodeJS.Timeout | null = null;
+
+  const commitNow = () => {
+    if (!open || !hasAudioInBuffer) return;
+    hasAudioInBuffer = false;
+    try { rt.send(JSON.stringify({ type: "input_audio_buffer.commit" })); } catch {}
+  };
+  const scheduleCommit = () => {
+    if (silenceTimer) clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(commitNow, 300);
+  };
+
+  rt.on("open", () => {
+    open = true;
+    const sessionUpdate = {
+      type: "session.update",
+      session: {
+        instructions: "You are a helpful, concise voice assistant for phone calls.",
+        input_audio_format: { type: "pcmu" },   // μ-law from Twilio
+        output_audio_format: { type: "pcmu" },  // μ-law back to Twilio
+        turn_detection: { type: "server_vad" },
+        voice: VOICE,
+      },
+    };
+    rt.send(JSON.stringify(sessionUpdate));
+  });
+  rt.on("error", (e) => console.error("[Realtime] socket error", e));
+  rt.on("close", () => { open = false; });
+
   return {
-    close: async () => console.log("[Realtime] session closed"),
-    sendAudio: (b64) => void b64,
+    socket: rt,
+    sendAudio: (b64: string) => {
+      if (!open) return;
+      try {
+        rt.send(JSON.stringify({ type: "input_audio_buffer.append", audio: b64 }));
+        hasAudioInBuffer = true;
+        scheduleCommit();
+      } catch {}
+    },
+    close: async () => {
+      try { commitNow(); rt.close(); } catch {}
+    },
   };
 }
 
@@ -50,7 +102,11 @@ async function main() {
     return handle(req, res, parseUrl(req.url, true));
   });
 
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({
+    noServer: true,
+    // Twilio sends Sec-WebSocket-Protocol: audio
+    handleProtocols: (protocols) => (protocols.includes("audio") ? "audio" : protocols[0] ?? false),
+  });
 
   wss.on("connection", (ws: WebSocket, request: http.IncomingMessage, userCtx: UserCtx) => {
     console.log(`[WS] Connected: userId=${userCtx.userId}`);
