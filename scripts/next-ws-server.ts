@@ -99,6 +99,7 @@ async function main() {
   });
 
   server.on("upgrade", (req, socket, head) => {
+    console.log("[UPGRADE]", (req.url ?? "").split("?")[0], "proto:", req.headers["sec-websocket-protocol"]);
     const url = parseUrl(req.url ?? "", true);
     if (url.pathname !== "/twilio-media") {
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
