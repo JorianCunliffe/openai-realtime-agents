@@ -1,0 +1,211 @@
+@@
+-/* eslint-disable no-console */
+-import http from "http";
+-import { parse as parseUrl } from "url";
+-import next from "next";
+-import { WebSocketServer, WebSocket } from "ws";
++/* eslint-disable no-console */
++import http from "http";
++import { parse as parseUrl } from "url";
++import next from "next";
++import { WebSocketServer, WebSocket } from "ws";
++
++// ---- Realtime config ----
++const REALTIME_MODEL = process.env.REALTIME_MODEL || "gpt-realtime";
++const VOICE = process.env.REALTIME_VOICE || "alloy";
++if (!process.env.OPENAI_API_KEY) {
++  console.error("OPENAI_API_KEY missing");
++}
+@@
+-const wss = new WebSocketServer({ noServer: true });
++const wss = new WebSocketServer({
++  noServer: true,
++  // Twilio sends Sec-WebSocket-Protocol: audio
++  handleProtocols: (protocols) => (protocols.includes("audio") ? "audio" : protocols[0] ?? false),
++});
+@@
+-type AnyTwilioFrame = StartFrame | MediaFrame | StopFrame | MarkFrame;
++type AnyTwilioFrame = StartFrame | MediaFrame | StopFrame | MarkFrame;
+ 
+-// Stub your realtime session here
+-async function createRealtimeSession(ctx: UserCtx): Promise<{ close: () => Promise<void>; sendAudio: (b64: string) => void }> {
+-  console.log(`[Realtime] session for userId=${ctx.userId} callSid=${ctx.callSid} streamSid=${ctx.streamSid}`);
+-  return {
+-    close: async () => console.log("[Realtime] session closed"),
+-    sendAudio: (b64) => void b64,
+-  };
+-}
++// --- OpenAI Realtime session factory ---
++async function createRealtimeSession(ctx: UserCtx): Promise<{
++  socket: WebSocket;
++  close: () => Promise<void>;
++  sendAudio: (b64: string) => void;
++}> {
++  if (!process.env.OPENAI_API_KEY) {
++    throw new Error("OPENAI_API_KEY missing");
++  }
++  const rt = new WebSocket(
++    `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`,
++    { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
++  );
++
++  let open = false;
++  let hasAudioInBuffer = false;
++  let silenceTimer: NodeJS.Timeout | null = null;
++
++  const commitNow = () => {
++    if (!open || !hasAudioInBuffer) return;
++    hasAudioInBuffer = false;
++    try { rt.send(JSON.stringify({ type: "input_audio_buffer.commit" })); } catch {}
++  };
++  const scheduleCommit = () => {
++    if (silenceTimer) clearTimeout(silenceTimer);
++    silenceTimer = setTimeout(commitNow, 300);
++  };
++
++  rt.on("open", () => {
++    open = true;
++    const sessionUpdate = {
++      type: "session.update",
++      session: {
++        instructions: "You are a helpful, concise voice assistant for phone calls.",
++        input_audio_format: { type: "pcmu" },   // μ-law from Twilio
++        output_audio_format: { type: "pcmu" },  // μ-law back to Twilio
++        turn_detection: { type: "server_vad" },
++        voice: VOICE,
++      },
++    };
++    rt.send(JSON.stringify(sessionUpdate));
++  });
++  rt.on("error", (e) => console.error("[Realtime] socket error", e));
++  rt.on("close", () => { open = false; });
++
++  return {
++    socket: rt,
++    sendAudio: (b64: string) => {
++      if (!open) return;
++      try {
++        rt.send(JSON.stringify({ type: "input_audio_buffer.append", audio: b64 }));
++        hasAudioInBuffer = true;
++        scheduleCommit();
++      } catch {}
++    },
++    close: async () => {
++      try { commitNow(); rt.close(); } catch {}
++    },
++  };
++}
+@@
+-  const server = http.createServer(async (req, res) => {
++  const server = http.createServer(async (req, res) => {
+     if (!req.url) return;
+     // simple health check (handy for TLS tests)
+     if (req.url === "/healthz") {
+       res.writeHead(200).end("ok");
+       return;
+     }
+     return handle(req, res, parseUrl(req.url, true));
+   });
+@@
+-  server.on("upgrade", (req, socket, head) => {
+-    const url = parseUrl(req.url ?? "", true);
++  server.on("upgrade", (req, socket, head) => {
++    console.log("[UPGRADE]", (req.url ?? "").split("?")[0], "proto:", req.headers["sec-websocket-protocol"]);
++    const url = parseUrl(req.url ?? "", true);
+     if (url.pathname !== "/twilio-media") {
+       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+       socket.destroy();
+       return;
+     }
+@@
+ wss.on("connection", (ws: WebSocket, request: http.IncomingMessage, userCtx: UserCtx) => {
+   console.log(`[WS] Connected: userId=${userCtx.userId}`);
+-  let session: Awaited<ReturnType<typeof createRealtimeSession>> | null = null;
+-  let streamSid: string | null = null;
++  let session: Awaited<ReturnType<typeof createRealtimeSession>> | null = null;
++  let streamSid: string | null = null;
+ 
+   ws.on("message", async (data) => {
+     let msg: AnyTwilioFrame;
+     try {
+       msg = JSON.parse(data.toString());
+     } catch {
+       console.warn("[WS] non-JSON frame");
+       return;
+     }
+ 
+     switch (msg.event) {
+       case "start": {
+         const s = msg as StartFrame;
+         userCtx.callSid = s.start.callSid;
+         userCtx.streamSid = s.streamSid;
+         console.log(`[Twilio][start] callSid=${s.start.callSid} streamSid=${s.streamSid}`);
+-        session = await createRealtimeSession(userCtx);
++        session = await createRealtimeSession(userCtx);
++        // Pipe model → Twilio
++        session.socket.on("message", (raw) => {
++          try {
++            const evt = JSON.parse(raw.toString());
++            if (evt.type === "response.output_audio.delta" && evt.delta && streamSid) {
++              ws.send(JSON.stringify({ event: "media", streamSid, media: { payload: evt.delta } }));
++            }
++          } catch (e) {
++            console.error("[Realtime] parse message err", e);
++          }
++        });
++        streamSid = s.streamSid;
+         break;
+       }
+ 
+       case "media": {
+-        const m = msg as MediaFrame;
+-        // Forward base64 payload to model (stubbed)
+-        session?.sendAudio(m.media.payload);
+-
+-        // 🔊 Loopback to Twilio so the caller hears themselves (proof of life)
+-        if (streamSid) {
+-          const echo = {
+-            event: "media",
+-            streamSid,
+-            media: { payload: m.media.payload }, // base64 PCMU back to Twilio
+-          };
+-          ws.send(JSON.stringify(echo));
+-        }
++        const m = msg as MediaFrame;
++        // Twilio → model
++        session?.sendAudio(m.media.payload);
+         break;
+       }
+ 
+-      case "mark": {
+-        const mk = msg as MarkFrame;
+-        console.log(`[Twilio][mark] ${mk.mark.name}`);
+-        break;
+-      }
++      case "mark":
++        // optional: handle marks
++        break;
+ 
+       case "stop": {
+         const st = msg as StopFrame;
+         console.log(`[Twilio][stop] streamSid=${st.streamSid}`);
+         await session?.close();
+         session = null;
+         ws.close(1000, "done");
+         break;
+       }
+ 
++      case "connected":
++      case "dtmf":
++        // ignore
++        break;
++
+       default:
+-        console.log("[Twilio] Unknown event", (msg as any).event);
++        console.log("[Twilio] unknown event", (msg as any).event);
+     }
+   });
+@@
+   server.listen(port, () => {
+     console.log(`[NEXT+WS] Listening on :${port} (WS path: /twilio-media)`);
+   });
