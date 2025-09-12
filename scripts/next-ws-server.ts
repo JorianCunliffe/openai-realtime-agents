@@ -38,7 +38,12 @@ async function createRealtimeSession(ctx: UserCtx): Promise<{
   }
   const rt = new WebSocket(
     `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`,
-    { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "OpenAI-Beta": "realtime=v1",
+      },
+    }
   );
 
   let open = false;
