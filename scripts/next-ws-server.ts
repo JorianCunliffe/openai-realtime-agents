@@ -77,6 +77,23 @@ async function createRealtimeSession(ctx: UserCtx): Promise<{
       },
     };
     rt.send(JSON.stringify(sessionUpdate));
+
+    // 👋 Have the model speak first with a short greeting
+    const greeting = {
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: "Greet the caller briefly (under 5 seconds). Introduce yourself and ask how you can help.",
+          },
+        ],
+      },
+    };
+    rt.send(JSON.stringify(greeting));
+    rt.send(JSON.stringify({ type: "response.create" }));
   });
   rt.on("error", (e) => console.error("[Realtime] socket error", e));
   rt.on("close", () => { open = false; });
