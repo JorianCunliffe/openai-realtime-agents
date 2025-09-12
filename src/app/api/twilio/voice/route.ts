@@ -87,10 +87,9 @@ export async function POST(req: NextRequest) {
   const wsUrl = buildWsUrl(userId);
 
   const vr = new VoiceResponse();
-  const start = vr.start();
-  // You can add <Parameter> tags if you want more data to show up in "start" frame
-  // start.parameter({ name: "userId", value: userId });
-  start.stream({ url: wsUrl });
+  const connect = vr.connect();
+  // Explicit track is optional but fine:
+  connect.stream({ url: wsUrl, track: "inbound_track" });
 
   const xml = vr.toString();
   return new Response(xml, {
