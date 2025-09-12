@@ -22,7 +22,10 @@ function httpsToWss(url: string): string {
 
 function buildWsUrl(userId: string): string {
   const base = getPublicHost();
-  return `${httpsToWss(base)}/twilio-media?userId=${encodeURIComponent(userId)}`;
+  const port = process.env.TWILIO_WS_PORT?.trim();
+  // If a port is set and the host doesn't already have one, append it
+  const withPort = port && !/:\d+$/.test(new URL(base).host) ? `${httpsToWss(base)}:${port}` : httpsToWss(base);
+  return `${withPort}/twilio-media?userId=${encodeURIComponent(userId)}`;
 }
 
 // ---- Very simple caller -> userId mapping (replace with your real source/DB) ----
