@@ -22,10 +22,9 @@ type StartFrame = {
   start: { accountSid: string; streamSid: string; callSid: string; tracks?: string[] };
   streamSid: string;
 };
-type MediaFrame = { event: "media"; media: { payload: string }; streamSid: string };
+type MediaFrame = { event: "media"; media: { payload: string; timestamp?: number }; streamSid: string };
 type StopFrame = { event: "stop"; streamSid: string };
 type MarkFrame = { event: "mark"; mark: { name: string }; streamSid: string };
-type AnyTwilioFrame = StartFrame | MediaFrame | StopFrame | MarkFrame;
 
 // --- OpenAI Realtime session factory ---
 async function createRealtimeSession(ctx: UserCtx): Promise<{
@@ -50,14 +49,22 @@ async function createRealtimeSession(ctx: UserCtx): Promise<{
   let hasAudioInBuffer = false;
   let silenceTimer: NodeJS.Timeout | null = null;
 
+  // Diagnostics
+  let commitCount = 0;
+  let deltaCount = 0;
+  console.log("[Realtime] init", { model: REALTIME_MODEL, userId: ctx.userId, callSid: ctx.callSid });
+
   const commitNow = () => {
     if (!open || !hasAudioInBuffer) return;
     hasAudioInBuffer = false;
+    commitCount++;
+    console.log("[Realtime] commit#", commitCount);
     try {
       rt.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-      // Prompt the model to produce audio output now
       rt.send(JSON.stringify({ type: "response.create" }));
-    } catch {}
+    } catch (e) {
+      console.log("[Realtime] commit send error", e);
+    }
   };
   const scheduleCommit = () => {
     if (silenceTimer) clearTimeout(silenceTimer);
@@ -66,6 +73,7 @@ async function createRealtimeSession(ctx: UserCtx): Promise<{
 
   rt.on("open", () => {
     open = true;
+    console.log("[Realtime] open");
     const sessionUpdate = {
       type: "session.update",
       session: {
@@ -77,8 +85,9 @@ async function createRealtimeSession(ctx: UserCtx): Promise<{
       },
     };
     rt.send(JSON.stringify(sessionUpdate));
+    console.log("[Realtime] session.update sent");
 
-    // 👋 Have the model speak first with a short greeting
+    // Greeting-first smoke test
     const greeting = {
       type: "conversation.item.create",
       item: {
@@ -93,10 +102,16 @@ async function createRealtimeSession(ctx: UserCtx): Promise<{
       },
     };
     rt.send(JSON.stringify(greeting));
+    console.log("[Realtime] greeting item sent");
     rt.send(JSON.stringify({ type: "response.create" }));
+    console.log("[Realtime] response.create (greeting) sent");
   });
-  rt.on("error", (e) => console.error("[Realtime] socket error", e));
-  rt.on("close", () => { open = false; });
+
+  rt.on("error", (e) => console.log("[Realtime] error", e));
+  rt.on("close", (code, reason) => {
+    open = false;
+    console.log("[Realtime] close", code, reason?.toString());
+  });
 
   return {
     socket: rt,
@@ -106,10 +121,17 @@ async function createRealtimeSession(ctx: UserCtx): Promise<{
         rt.send(JSON.stringify({ type: "input_audio_buffer.append", audio: b64 }));
         hasAudioInBuffer = true;
         scheduleCommit();
-      } catch {}
+      } catch (e) {
+        console.log("[Realtime] append error", e);
+      }
     },
     close: async () => {
-      try { commitNow(); rt.close(); } catch {}
+      try {
+        commitNow();
+        rt.close();
+      } catch (e) {
+        console.log("[Realtime] close error", e);
+      }
     },
   };
 }
@@ -120,7 +142,6 @@ async function main() {
   // Create one HTTP server for both Next requests and WS upgrades
   const server = http.createServer(async (req, res) => {
     if (!req.url) return;
-    // simple health check (handy for TLS tests)
     if (req.url === "/healthz") {
       res.writeHead(200).end("ok");
       return;
@@ -130,17 +151,23 @@ async function main() {
 
   const wss = new WebSocketServer({
     noServer: true,
-    // Twilio sends Sec-WebSocket-Protocol: audio
-    handleProtocols: (protocols) => (protocols.includes("audio") ? "audio" : protocols[0] ?? false),
+    // Twilio may or may not send Sec-WebSocket-Protocol: audio
+    handleProtocols: (protocols: Set<string>, _req) => (protocols.has("audio") ? "audio" : false),
   });
 
-  wss.on("connection", (ws: WebSocket, request: http.IncomingMessage, userCtx: UserCtx) => {
+  wss.on("connection", (ws: WebSocket, _request: http.IncomingMessage, userCtx: UserCtx) => {
     console.log(`[WS] Connected: userId=${userCtx.userId}`);
     let session: Awaited<ReturnType<typeof createRealtimeSession>> | null = null;
     let streamSid: string | null = null;
 
+    // Twilio media diagnostics
+    let mediaCount = 0;
+    let firstMediaAt: number | null = null;
+    let bytesAccum = 0;
+    let lastRateAt = Date.now();
+
     ws.on("message", async (data) => {
-      let msg: AnyTwilioFrame;
+      let msg: { event: string; [k: string]: any };
       try {
         msg = JSON.parse(data.toString());
       } catch {
@@ -154,19 +181,24 @@ async function main() {
           userCtx.callSid = s.start.callSid;
           userCtx.streamSid = s.streamSid;
           streamSid = s.streamSid;
-          console.log(`[Twilio][start] callSid=${s.start.callSid} streamSid=${s.streamSid}`);
+          console.log("[Twilio][start]", { callSid: s.start.callSid, streamSid: s.streamSid, tracks: s.start.tracks });
           session = await createRealtimeSession(userCtx);
 
-          // 🔊 Model → Twilio: forward OpenAI audio deltas back to the caller
+          // Model → Twilio: forward audio deltas, with counters
+          let deltaCount = 0;
           session.socket.on("message", (raw) => {
             try {
               const evt = JSON.parse(raw.toString());
               if (evt.type === "response.output_audio.delta" && evt.delta && streamSid) {
-                ws.send(JSON.stringify({
-                  event: "media",
-                  streamSid,
-                  media: { payload: evt.delta } // base64 μ-law
-                }));
+                deltaCount++;
+                if (deltaCount % 50 === 1) console.log("[Realtime] delta#", deltaCount, "len(b64)", evt.delta.length);
+                ws.send(JSON.stringify({ event: "media", streamSid, media: { payload: evt.delta } }));
+                if (deltaCount % 50 === 1) console.log("[Twilio<-Model] sent delta#", deltaCount);
+              } else if (evt.type !== "response.output_audio.delta") {
+                // log a few interesting non-delta events
+                if (["session.updated","response.created","response.completed","response.content.done","error","rate_limits.updated"].includes(evt.type)) {
+                  console.log("[Realtime] evt", evt.type);
+                }
               }
             } catch (e) {
               console.error("[Realtime] parse message err", e);
@@ -174,29 +206,48 @@ async function main() {
           });
           break;
         }
+
         case "media": {
           const m = msg as MediaFrame;
-          // Twilio → Model (append μ-law base64 audio)
+          mediaCount++;
+          if (!firstMediaAt) firstMediaAt = Date.now();
+
+          // rough bitrate estimate every 2s (3/4 of base64 length ≈ bytes)
+          bytesAccum += Math.floor((m.media?.payload?.length || 0) * 0.75);
+          const now = Date.now();
+          if (now - lastRateAt > 2000) {
+            const kbps = ((bytesAccum * 8) / (now - lastRateAt)).toFixed(1);
+            console.log(`[Twilio] media#${mediaCount} ~${kbps} kbps inbound, ts=${m.media?.timestamp ?? "?"}`);
+            bytesAccum = 0;
+            lastRateAt = now;
+          }
+
+          // Twilio → Model
           session?.sendAudio(m.media.payload);
           break;
         }
+
         case "mark":
-          // optional: handle marks if you need timing
+          // optional timing
           break;
+
         case "stop": {
-          const st = msg as StopFrame;
-          console.log(`[Twilio][stop] streamSid=${st.streamSid}`);
+          const secs = firstMediaAt ? ((Date.now() - firstMediaAt) / 1000).toFixed(1) : "0";
+          console.log("[Twilio][stop]", { streamSid: msg.streamSid, mediaCount, firstMediaAfterSec: secs });
           await session?.close();
           session = null;
           ws.close(1000, "done");
           break;
         }
+
         case "connected":
         case "dtmf":
-          // ignore
+          // ignore, but keep the log minimal if you want:
+          // console.log("[Twilio]", msg.event);
           break;
+
         default:
-          console.log("[Twilio] unknown event", (msg as any).event);
+          console.log("[Twilio] unknown event", msg.event);
       }
     });
 
@@ -209,7 +260,12 @@ async function main() {
   });
 
   server.on("upgrade", (req, socket, head) => {
-    console.log("[UPGRADE]", (req.url ?? "").split("?")[0], "proto:", req.headers["sec-websocket-protocol"]);
+    const info = {
+      path: (req.url ?? "").split("?")[0],
+      proto: req.headers["sec-websocket-protocol"],
+      ua: req.headers["user-agent"],
+    };
+    console.log("[UPGRADE]", info);
     const url = parseUrl(req.url ?? "", true);
     if (url.pathname !== "/twilio-media") {
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
