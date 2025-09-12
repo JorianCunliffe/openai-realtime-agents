@@ -4,6 +4,13 @@ import { parse as parseUrl } from "url";
 import next from "next";
 import { WebSocketServer, WebSocket } from "ws";
 
+// ---- Realtime config ----
+const REALTIME_MODEL = process.env.REALTIME_MODEL || "gpt-realtime";
+const VOICE = process.env.REALTIME_VOICE || "alloy";
+if (!process.env.OPENAI_API_KEY) {
+  console.error("OPENAI_API_KEY missing");
+}
+
 const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev });
 const handle = app.getRequestHandler();
