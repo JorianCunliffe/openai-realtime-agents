@@ -137,7 +137,7 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
             return pc;
           },
         }),
-        model: process.env.REALTIME_MODEL,
+        model: process.env.REALTIME_MODEL || 'gpt-4o-realtime-preview',
         config: {
           inputAudioFormat: audioFormat,
           outputAudioFormat: audioFormat,
