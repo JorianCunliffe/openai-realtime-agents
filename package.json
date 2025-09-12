@@ -3,14 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "concurrently -n NEXT,WS \"next dev\" \"node -r ts-node/register/transpile-only scripts/twilio-ws-server.ts\"",
+    "build": "next build && esbuild scripts/twilio-ws-server.ts --platform=node --bundle --outfile=scripts/twilio-ws-server.js",
+    "start": "concurrently -n NEXT,WS \"next start -p 3000\" \"node scripts/twilio-ws-server.js\"",
+    "ws:dev": "node -r ts-node/register/transpile-only scripts/twilio-ws-server.ts",
+    "ws:start": "node scripts/twilio-ws-server.js",
     "lint": "next lint"
   },
   "dependencies": {
     "@openai/agents": "^0.0.5",
     "@radix-ui/react-icons": "^1.3.2",
+    "concurrently": "^9.2.1",
     "dotenv": "^16.4.7",
     "google-auth-library": "^10.2.1",
     "googleapis": "^157.0.0",
@@ -19,7 +22,9 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^9.0.3",
+    "twilio": "^5.9.0",
     "uuid": "^11.0.4",
+    "ws": "^8.18.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -28,11 +33,13 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.25.9",
     "eslint": "^9",
     "eslint-config-next": "15.1.4",
     "postcss": "^8",
     "prisma": "^6.14.0",
     "tailwindcss": "^3.4.1",
+    "ts-node": "^10.9.2",
     "typescript": "^5"
   }
 }
