@@ -48,6 +48,7 @@ async function main() {
   wss.on("connection", (ws: WebSocket, request: http.IncomingMessage, userCtx: UserCtx) => {
     console.log(`[WS] Connected: userId=${userCtx.userId}`);
     let session: Awaited<ReturnType<typeof createRealtimeSession>> | null = null;
+    let streamSid: string | null = null;
 
     ws.on("message", async (data) => {
       let msg: AnyTwilioFrame;
@@ -63,13 +64,25 @@ async function main() {
           const s = msg as StartFrame;
           userCtx.callSid = s.start.callSid;
           userCtx.streamSid = s.streamSid;
+          streamSid = s.streamSid;
           console.log(`[Twilio][start] callSid=${s.start.callSid} streamSid=${s.streamSid}`);
           session = await createRealtimeSession(userCtx);
           break;
         }
         case "media": {
           const m = msg as MediaFrame;
+          // Forward to your model (still stubbed)
           session?.sendAudio(m.media.payload);
+
+          // 🔊 Loopback to Twilio so the caller hears themselves (proof of life)
+          if (streamSid) {
+            const echo = {
+              event: "media",
+              streamSid,
+              media: { payload: m.media.payload }, // base64 PCMU back to Twilio
+            };
+            ws.send(JSON.stringify(echo));
+          }
           break;
         }
         case "mark": {
