@@ -72,7 +72,10 @@ const server = http.createServer((req, res) => {
   res.writeHead(404).end("Not Found");
 });
 
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({
+  noServer: true,
+  handleProtocols: (protocols) => (protocols.includes("audio") ? "audio" : protocols[0] ?? false),
+});
 
 wss.on("connection", (ws: WebSocket, request: http.IncomingMessage, userCtx: UserCtx) => {
   console.log(`[WS] Connected: userId=${userCtx.userId}`);
