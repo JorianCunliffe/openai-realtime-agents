@@ -4,6 +4,9 @@ import { twiml } from "twilio";
 
 const { VoiceResponse } = twiml;
 
+// Optional env to bypass verification for quick end-to-end tests
+const VERIFY_DISABLED = process.env.TWILIO_VERIFY_DISABLED === "1";
+
 // ---- Config helpers ----
 function getPublicHost(): string {
   // Public HTTPS origin of your app (e.g., https://<your-repl>.replit.app)
@@ -35,14 +38,17 @@ function resolveUserIdForCaller(e164From: string | null): string {
 
 // ---- Optional: Twilio signature verification (enabled in production) ----
 async function verifyTwilioSignature(req: NextRequest, bodyParams: URLSearchParams): Promise<boolean> {
-  if (process.env.NODE_ENV !== "production") return true; // skip in dev
+  if (VERIFY_DISABLED || process.env.NODE_ENV !== "production") return true; // skip in dev or if bypass set
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   if (!authToken) {
     console.warn("TWILIO_AUTH_TOKEN not set; cannot verify signature. Rejecting in production.");
     return false;
   }
   const signature = req.headers.get("x-twilio-signature") ?? "";
-  const url = req.nextUrl.toString();
+  // Reconstruct the **public** URL Twilio hit (what they signed), not internal nextUrl
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  const url = `${proto}://${host}${req.nextUrl.pathname}`;
 
   // Twilio's helper requires a plain object of params
   const paramsObj: Record<string, string> = {};
@@ -50,16 +56,22 @@ async function verifyTwilioSignature(req: NextRequest, bodyParams: URLSearchPara
 
   // Lazy import to avoid serverless cold path cost when unused
   const { validateRequest } = await import("twilio/lib/webhooks/webhooks.js");
-  return validateRequest(authToken, signature, url, paramsObj);
+  const ok = validateRequest(authToken, signature, url, paramsObj);
+  if (!ok) {
+    console.error("[Twilio] Signature validation failed", {
+      url, proto, host, path: req.nextUrl.pathname,
+      headerPresent: !!signature,
+      hasToken: !!authToken,
+    });
+  }
+  return ok;
 }
 
 // Twilio sends application/x-www-form-urlencoded
 export async function POST(req: NextRequest) {
-  const formData = await req.formData();
-  // Convert to URLSearchParams for verification convenience
-  const pairs: [string, string][] = [];
-  formData.forEach((v, k) => pairs.push([k, String(v)]));
-  const params = new URLSearchParams(pairs);
+  // IMPORTANT: read the RAW body to preserve '+' vs '%20' and ordering
+  const raw = await req.text();
+  const params = new URLSearchParams(raw);
 
   const ok = await verifyTwilioSignature(req, params);
   if (!ok) {
