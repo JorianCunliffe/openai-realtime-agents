@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n NEXT,WS \"next dev\" \"node -r ts-node/register/transpile-only scripts/twilio-ws-server.ts\"",
+    "dev": "concurrently -n NEXT,WS \"next dev\" \"npx tsx scripts/twilio-ws-server.ts\"",
     "build": "next build && esbuild scripts/twilio-ws-server.ts --platform=node --bundle --outfile=scripts/twilio-ws-server.js",
     "start": "concurrently -n NEXT,WS \"next start -p 3000\" \"node scripts/twilio-ws-server.js\"",
     "ws:dev": "node -r ts-node/register/transpile-only scripts/twilio-ws-server.ts",
