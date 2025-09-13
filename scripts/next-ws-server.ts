@@ -217,7 +217,7 @@ async function main() {
                 ws.send(JSON.stringify({ event: "media", streamSid, media: { payload: evt.delta } }));
                 if (deltaCount % 50 === 1) console.log("[Twilio<-Model] forwarded delta#", deltaCount);
           
-              } else if (evt.type !== "response.output.audio.delta") {
+              } else if (evt.type !== "response.audio.delta") {
                 //log text output
                 if (evt.type === "response.output_text.delta") {
                   console.log("[Realtime] text-delta:", JSON.stringify(evt, null, 2));
