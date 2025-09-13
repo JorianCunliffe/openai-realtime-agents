@@ -201,8 +201,16 @@ async function main() {
           session.socket.on("message", (raw) => {
             try {
               const evt = JSON.parse(raw.toString());
+
+              // Add this near the top of the handler:
+              console.log("[Realtime] any evt:", evt.type);
+              if (evt.type.startsWith("response.output_") && evt.type !== "response.output.audio.delta") {
+                // Show first 400 chars so we can see structure without flooding logs
+                console.log("[Realtime] output payload head:", JSON.stringify(evt).slice(0, 400));
+              }
+
           
-              if (evt.type === "response.output_audio.delta" && evt.delta && streamSid) {
+              if (evt.type === "response.output.audio.delta" && evt.delta && streamSid) {
                 deltaCount++;
                 if (deltaCount % 50 === 1) {
                   console.log("[Realtime] delta#", deltaCount, "len(b64)", evt.delta.length);
@@ -212,7 +220,7 @@ async function main() {
                   console.log("[Twilio<-Model] sent delta#", deltaCount);
                 }
           
-              } else if (evt.type !== "response.output_audio.delta") {
+              } else if (evt.type !== "response.output.audio.delta") {
                 //log text output
                 if (evt.type === "response.output_text.delta") {
                   console.log("[Realtime] text-delta:", JSON.stringify(evt, null, 2));
