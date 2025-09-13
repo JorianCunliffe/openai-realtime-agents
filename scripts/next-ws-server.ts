@@ -202,23 +202,20 @@ async function main() {
             try {
               const evt = JSON.parse(raw.toString());
 
-              // Add this near the top of the handler:
+              // Always log event type
               console.log("[Realtime] any evt:", evt.type);
-              if (evt.type.startsWith("response.output_") && evt.type !== "response.output.audio.delta") {
-                // Show first 400 chars so we can see structure without flooding logs
-                console.log("[Realtime] output payload head:", JSON.stringify(evt).slice(0, 400));
+
+              // Show payload head for any response.* event that's not a big audio delta
+              if (evt.type?.startsWith?.("response.") && evt.type !== "response.audio.delta") {
+                console.log("[Realtime] response payload head:", JSON.stringify(evt).slice(0, 400));
               }
 
-          
-              if (evt.type === "response.output.audio.delta" && evt.delta && streamSid) {
+              // ✅ Forward actual audio chunks you receive
+              if (streamSid && evt.type === "response.audio.delta" && typeof evt.delta === "string") {
                 deltaCount++;
-                if (deltaCount % 50 === 1) {
-                  console.log("[Realtime] delta#", deltaCount, "len(b64)", evt.delta.length);
-                }
+                if (deltaCount % 50 === 1) console.log("[Realtime] audio delta#", deltaCount, "b64len", evt.delta.length);
                 ws.send(JSON.stringify({ event: "media", streamSid, media: { payload: evt.delta } }));
-                if (deltaCount % 50 === 1) {
-                  console.log("[Twilio<-Model] sent delta#", deltaCount);
-                }
+                if (deltaCount % 50 === 1) console.log("[Twilio<-Model] forwarded delta#", deltaCount);
           
               } else if (evt.type !== "response.output.audio.delta") {
                 //log text output
