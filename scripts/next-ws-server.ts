@@ -74,38 +74,49 @@ async function createRealtimeSession(ctx: UserCtx): Promise<{
   rt.on("open", () => {
     open = true;
     console.log("[Realtime] open");
+
+    // ✅ Legacy/flat session payload expected by your server
     const sessionUpdate = {
       type: "session.update",
       session: {
-        instructions: "You are a helpful, concise voice assistant for phone calls.",
-        input_audio_format: { type: "pcmu" },   // μ-law from Twilio
-        output_audio_format: { type: "pcmu" },  // μ-law back to Twilio
-        turn_detection: { type: "server_vad" },
+        turn_detection: { type: "server_vad" },    // top-level
+        input_audio_format: "g711_ulaw",           // Twilio PCMU in
+        output_audio_format: "g711_ulaw",          // PCMU back to Twilio
         voice: VOICE,
+        instructions: "You are a helpful, concise voice assistant for phone calls.",
+        modalities: ["text", "audio"],             // <- legacy servers accept this
+        // optional knobs if you want them:
+        // temperature: 0.8,
+        // tools: [...],
       },
     };
+
+    console.log("Sending session update:", JSON.stringify(sessionUpdate));
     rt.send(JSON.stringify(sessionUpdate));
     console.log("[Realtime] session.update sent");
 
-    // Greeting-first smoke test
+    // Have the model speak first (and force dual modalities as required)
     const greeting = {
       type: "conversation.item.create",
       item: {
         type: "message",
         role: "user",
         content: [
-          {
-            type: "input_text",
-            text: "Greet the caller briefly (under 5 seconds). Introduce yourself and ask how you can help.",
-          },
+          { type: "input_text", text: "Greet the caller briefly (under 5 seconds). Introduce yourself and ask how you can help." },
         ],
       },
     };
     rt.send(JSON.stringify(greeting));
     console.log("[Realtime] greeting item sent");
-    rt.send(JSON.stringify({ type: "response.create" }));
+
+    rt.send(JSON.stringify({
+      type: "response.create",
+      response: { modalities: ["audio", "text"] }  // <- your server requires audio+text (not audio-only)
+    }));
     console.log("[Realtime] response.create (greeting) sent");
   });
+
+
 
   rt.on("error", (e) => console.log("[Realtime] error", e));
   rt.on("close", (code, reason) => {
@@ -185,21 +196,45 @@ async function main() {
           session = await createRealtimeSession(userCtx);
 
           // Model → Twilio: forward audio deltas, with counters
+          // Model → Twilio: forward audio deltas, with counters
           let deltaCount = 0;
           session.socket.on("message", (raw) => {
             try {
               const evt = JSON.parse(raw.toString());
+          
               if (evt.type === "response.output_audio.delta" && evt.delta && streamSid) {
                 deltaCount++;
-                if (deltaCount % 50 === 1) console.log("[Realtime] delta#", deltaCount, "len(b64)", evt.delta.length);
+                if (deltaCount % 50 === 1) {
+                  console.log("[Realtime] delta#", deltaCount, "len(b64)", evt.delta.length);
+                }
                 ws.send(JSON.stringify({ event: "media", streamSid, media: { payload: evt.delta } }));
-                if (deltaCount % 50 === 1) console.log("[Twilio<-Model] sent delta#", deltaCount);
+                if (deltaCount % 50 === 1) {
+                  console.log("[Twilio<-Model] sent delta#", deltaCount);
+                }
+          
               } else if (evt.type !== "response.output_audio.delta") {
+                //log text output
+                if (evt.type === "response.output_text.delta") {
+                  console.log("[Realtime] text-delta:", JSON.stringify(evt, null, 2));
+                }
                 // log a few interesting non-delta events
-                if (["session.updated","response.created","response.completed","response.content.done","error","rate_limits.updated"].includes(evt.type)) {
+                if ([
+                  "session.updated",
+                  "response.created",
+                  "response.completed",
+                  "response.content.done",
+                  "error",
+                  "rate_limits.updated"
+                ].includes(evt.type)) {
                   console.log("[Realtime] evt", evt.type);
                 }
+          
+                // 🔎 print full error payload if it's an error
+                if (evt.type === "error") {
+                  console.log("[Realtime] error payload:", JSON.stringify(evt, null, 2));
+                }
               }
+          
             } catch (e) {
               console.error("[Realtime] parse message err", e);
             }

@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
 const DEFAULT_MODEL =
-  process.env.NEXT_PUBLIC_REALTIME_MODEL ||
-  "gpt-4o-realtime-preview-2025-06-03";
+  process.env.REALTIME_MODEL ||
+  "gpt-realtime";
 
 async function createEphemeralSession(initBody: Record<string, any>) {
   const r = await fetch("https://api.openai.com/v1/realtime/sessions", {
