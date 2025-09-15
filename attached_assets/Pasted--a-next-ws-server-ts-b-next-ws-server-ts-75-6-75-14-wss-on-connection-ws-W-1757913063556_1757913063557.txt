@@ -1,0 +1,130 @@
+--- a/next-ws-server.ts
++++ b/next-ws-server.ts
+@@ -75,6 +75,14 @@
+   wss.on("connection", (ws: WebSocket, _request: http.IncomingMessage, userCtx: UserCtx) => {
+     console.log(`[WS] Connected: userId=${userCtx.userId}`);
+     let session: Awaited<ReturnType<typeof createRealtimeSession>> | null = null;
+     let streamSid: string | null = null;
+ 
++    // --- Barge-in state (mirrors index.ts pattern) ---
++    let latestMediaTimestamp: number = 0;
++    let lastAssistantItem: string | null = null;
++    let markQueue: string[] = [];
++    // We timestamp Twilio media arrival to compute how much audio was already sent
++    let responseStartTimestampTwilio: number | null = null;
++    const SHOW_TIMING_MATH = false; // keep quiet by default
++
+     // Twilio media diagnostics
+     let mediaCount = 0;
+     let firstMediaAt: number | null = null;
+     let bytesAccum = 0;
+     let lastRateAt = Date.now();
+@@ -96,6 +104,19 @@
+           streamSid = s.streamSid;
+           console.log("[Twilio][start]", { callSid: s.start.callSid, streamSid: s.streamSid, tracks: s.start.tracks });
+           session = await createRealtimeSession(userCtx);
+ 
++          // Helper: send Twilio "mark" so we know playback chunks end
++          const sendMark = (sid: string | null) => {
++            if (!sid) return;
++            ws.send(JSON.stringify({ event: "mark", streamSid: sid, mark: { name: "responsePart" } }));
++            markQueue.push("responsePart");
++          };
++          // Helper: on user speech, truncate model audio & clear Twilio buffer
++          const handleSpeechStartedEvent = () => {
++            if (markQueue.length > 0 && responseStartTimestampTwilio != null) {
++              const elapsed = latestMediaTimestamp - responseStartTimestampTwilio;
++              if (SHOW_TIMING_MATH) console.log(`[BARGE] elapsed=${elapsed}ms (${latestMediaTimestamp}-${responseStartTimestampTwilio})`);
++              if (lastAssistantItem) session?.socket.send(JSON.stringify({ type: "conversation.item.truncate", item_id: lastAssistantItem, content_index: 0, audio_end_ms: elapsed }));
++              ws.send(JSON.stringify({ event: "clear", streamSid })); markQueue = []; lastAssistantItem = null; responseStartTimestampTwilio = null;
++            }
++          };
+ 
+           // Model → Twilio: forward audio deltas, with counters
+           // Model → Twilio: forward audio deltas, with counters
+           let deltaCount = 0;
+           session.socket.on("message", (raw) => {
+@@ -106,19 +127,32 @@
+ 
+               // Always log event type
+               console.log("[Realtime] any evt:", evt.type);
+ 
+-              // Show payload head for any response.* event that's not a big audio delta
++              // Show payload head for any response.* event that's not a big audio delta
+               if (evt.type?.startsWith?.("response.") && evt.type !== "response.audio.delta") {
+                 console.log("[Realtime] response payload head:", JSON.stringify(evt).slice(0, 400));
+               }
+ 
+               // ✅ Forward actual audio chunks you receive
+               if (streamSid && evt.type === "response.audio.delta" && typeof evt.delta === "string") {
+                 deltaCount++;
+                 if (deltaCount % 50 === 1) console.log("[Realtime] audio delta#", deltaCount, "b64len", evt.delta.length);
+                 ws.send(JSON.stringify({ event: "media", streamSid, media: { payload: evt.delta } }));
+                 if (deltaCount % 50 === 1) console.log("[Twilio<-Model] forwarded delta#", deltaCount);
++
++                // Barge-in timing: stamp when the first delta of a response starts
++                if (responseStartTimestampTwilio == null) {
++                  responseStartTimestampTwilio = latestMediaTimestamp;
++                  if (SHOW_TIMING_MATH) console.log(`[BARGE] responseStartTimestampTwilio=${responseStartTimestampTwilio}`);
++                }
++                // Track assistant item id if present so we can truncate it later
++                if (typeof evt.item_id === "string") lastAssistantItem = evt.item_id;
++                // Ask Twilio to send us a 'mark' when this chunk finishes
++                sendMark(streamSid);
+ 
+-              } else if (evt.type !== "response.audio.delta") {
++              } else if (evt.type === "input_audio_buffer.speech_started") {
++                // ← model detected user speech: truncate & clear to allow barge-in
++                handleSpeechStartedEvent();
++
++              } else if (evt.type !== "response.audio.delta") {
+                 //log text output
+                 if (evt.type === "response.output_text.delta") {
+                   console.log("[Realtime] text-delta:", JSON.stringify(evt, null, 2));
+                 }
+                 // log a few interesting non-delta events
+@@ -148,10 +182,18 @@
+         }
+ 
+         case "media": {
+           const m = msg as MediaFrame;
+           mediaCount++;
++          // Track arrival time from Twilio so we can compute elapsed audio sent
++          if (typeof m.media?.timestamp === "number") {
++            latestMediaTimestamp = m.media.timestamp;
++            if (SHOW_TIMING_MATH) console.log(`[Twilio] media ts=${latestMediaTimestamp}`);
++          }
+           if (!firstMediaAt) firstMediaAt = Date.now();
+ 
+           // rough bitrate estimate every 2s (3/4 of base64 length ≈ bytes)
+           bytesAccum += Math.floor((m.media?.payload?.length || 0) * 0.75);
+           const now = Date.now();
+@@ -165,6 +207,11 @@
+ 
+           // Twilio → Model
+           session?.sendAudio(m.media.payload);
+           break;
+         }
++
++        case "mark":
++          if (markQueue.length > 0) markQueue.shift(); // playback chunk finished
++          break;
+ 
+         case "stop": {
+           const secs = firstMediaAt ? ((Date.now() - firstMediaAt) / 1000).toFixed(1) : "0";
+           console.log("[Twilio][stop]", { streamSid: msg.streamSid, mediaCount, firstMediaAfterSec: secs });
+           await session?.close();
+@@ -172,6 +219,10 @@
+           ws.close(1000, "done");
+           break;
+         }
+ 
++        case "start":
++          responseStartTimestampTwilio = null;
++          latestMediaTimestamp = 0;
++          // (fallthrough to existing logging)
+         case "connected":
+         case "dtmf":
+           // ignore, but keep the log minimal if you want:
+           // console.log("[Twilio]", msg.event);
+           break;

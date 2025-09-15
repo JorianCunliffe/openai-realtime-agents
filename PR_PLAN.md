@@ -137,19 +137,6 @@ async function startAgent() {
 
 ---
 
-## ✅ Feature Steps — (Replit)
-Need to introduce barge-in as i did in : speech-assistant-openai-realtime-api-node-DEV
-Need to make Twilio calls out work
-Middleware - pre call, in call and post call processing
-
-need to put everything into settings db and also env files
-Need to lock in the 
-need to progress to get something ready for the driving instructors
-need to get something tready for coaching
-need to be able to make outbound calls
-
----
-
 ## ✅ Step 8 — Front-End Pages
 
  Add /login → button → /api/auth/google.
@@ -190,10 +177,6 @@ Would you like me to merge all the changes (DB, Google OAuth, Calendar, Twilio) 
 * [ ] Verify Twilio can reach public Replit URL (`https://…replit.app`).
 
 ---
-
-
-
-
 
 ## 🔒 Security Notes
 
