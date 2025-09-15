@@ -2,9 +2,6 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./lib/envSetup";
 
-import { geistSans } from "./fonts/geist-sans";
-import { geistMono } from "./fonts/geist-mono";
-
 export const metadata: Metadata = {
   title: "Realtime API Agents",
   description: "A demo app from OpenAI.",
@@ -28,7 +25,7 @@ export default function RootLayout({
 
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className="antialiased">
         {children}
       </body>
     </html>
