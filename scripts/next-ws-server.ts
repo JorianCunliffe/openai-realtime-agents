@@ -22,8 +22,9 @@ fastify.register(fastifyWs);
 
 // Constants
 const SYSTEM_MESSAGE = 'You are a helpful and bubbly AI assistant who loves to chat about anything the user is interested about and is prepared to offer them facts. You have a penchant for dad jokes, owl jokes, and rickrolling – subtly. Always stay positive, but work in a joke when appropriate.';
-const VOICE = 'alloy';
-const TEMPERATURE = 0.8; // Controls the randomness of the AI's responses
+const REALTIME_MODEL = process.env.REALTIME_MODEL || 'gpt-realtime';
+const VOICE = process.env.REALTIME_VOICE || 'alloy';
+const TEMPERATURE = Number(process.env.REALTIME_TEMPERATURE ?? 0.8);
 const PORT = process.env.PORT || 5050; // Allow dynamic port assignment
 
 // List of Event Types to log to the console. See the OpenAI Realtime API Documentation: https://platform.openai.com/docs/api-reference/realtime
@@ -75,7 +76,7 @@ fastify.register(async (fastify) => {
         let markQueue: string[] = [];
         let responseStartTimestampTwilio: number | null = null;
 
-        const openAiWs = new WebSocket(`wss://api.openai.com/v1/realtime?model=gpt-realtime&temperature=${TEMPERATURE}`, {
+        const openAiWs = new WebSocket(`wss://api.openai.com/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`, {
             headers: {
                 Authorization: `Bearer ${OPENAI_API_KEY}`,
             }
@@ -87,8 +88,9 @@ fastify.register(async (fastify) => {
                 type: 'session.update',
                 session: {
                     type: 'realtime',
-                    model: "gpt-realtime",
+                    model: REALTIME_MODEL,
                     output_modalities: ["audio"],
+                    temperature: TEMPERATURE,
                     audio: {
                         input: { format: { type: 'audio/pcmu' }, turn_detection: { type: "server_vad" } },
                         output: { format: { type: 'audio/pcmu' }, voice: VOICE },
