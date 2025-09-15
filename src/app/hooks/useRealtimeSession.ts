@@ -120,37 +120,55 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
 
       updateStatus('CONNECTING');
 
-      const ek = await getEphemeralKey();
-      const rootAgent = initialAgents[0];
+      try {
+        // Check for microphone access before proceeding
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // Close the test stream immediately
+            stream.getTracks().forEach(track => track.stop());
+          } catch (audioError) {
+            console.warn('Microphone access denied or not available:', audioError);
+            // Continue anyway - some setups might work without explicit getUserMedia
+          }
+        }
 
-      // This lets you use the codec selector in the UI to force narrow-band (8 kHz) codecs to
-      //  simulate how the voice agent sounds over a PSTN/SIP phone call.
-      const codecParam = codecParamRef.current;
-      const audioFormat = audioFormatForCodec(codecParam);
+        const ek = await getEphemeralKey();
+        const rootAgent = initialAgents[0];
 
-      sessionRef.current = new RealtimeSession(rootAgent, {
-        transport: new OpenAIRealtimeWebRTC({
-          audioElement,
-          // Set preferred codec before offer creation
-          changePeerConnection: async (pc: RTCPeerConnection) => {
-            applyCodec(pc);
-            return pc;
+        // This lets you use the codec selector in the UI to force narrow-band (8 kHz) codecs to
+        //  simulate how the voice agent sounds over a PSTN/SIP phone call.
+        const codecParam = codecParamRef.current;
+        const audioFormat = audioFormatForCodec(codecParam);
+
+        sessionRef.current = new RealtimeSession(rootAgent, {
+          transport: new OpenAIRealtimeWebRTC({
+            audioElement,
+            // Set preferred codec before offer creation
+            changePeerConnection: async (pc: RTCPeerConnection) => {
+              applyCodec(pc);
+              return pc;
+            },
+          }),
+          model: process.env.REALTIME_MODEL || 'gpt-realtime',
+          config: {
+            inputAudioFormat: audioFormat,
+            outputAudioFormat: audioFormat,
+            inputAudioTranscription: {
+              model: 'gpt-4o-mini-transcribe',
+            },
           },
-        }),
-        model: process.env.REALTIME_MODEL || 'gpt-realtime',
-        config: {
-          inputAudioFormat: audioFormat,
-          outputAudioFormat: audioFormat,
-          inputAudioTranscription: {
-            model: 'gpt-4o-mini-transcribe',
-          },
-        },
-        outputGuardrails: outputGuardrails ?? [],
-        context: extraContext ?? {},
-      });
+          outputGuardrails: outputGuardrails ?? [],
+          context: extraContext ?? {},
+        });
 
-      await sessionRef.current.connect({ apiKey: ek });
-      updateStatus('CONNECTED');
+        await sessionRef.current.connect({ apiKey: ek });
+        updateStatus('CONNECTED');
+      } catch (error) {
+        console.error('Failed to connect to Realtime API:', error);
+        updateStatus('DISCONNECTED');
+        throw error;
+      }
     },
     [callbacks, updateStatus],
   );

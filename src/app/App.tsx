@@ -203,6 +203,17 @@ function App() {
       setSessionStatus("CONNECTING");
 
       try {
+        // Request microphone permission early
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          try {
+            await navigator.mediaDevices.getUserMedia({ audio: true });
+          } catch (permissionError) {
+            alert('Microphone access is required for voice chat. Please allow microphone access and try again.');
+            setSessionStatus("DISCONNECTED");
+            return;
+          }
+        }
+
         const EPHEMERAL_KEY = await fetchEphemeralKey();
         if (!EPHEMERAL_KEY) return;
 
