@@ -1,31 +1,12 @@
 // File: src/app/api/twilio/voice/route.ts
 import type { NextRequest } from "next/server";
 import { twiml } from "twilio";
+import { buildWsUrl } from "../utils";
 
 const { VoiceResponse } = twiml;
 
 // Optional env to bypass verification for quick end-to-end tests
 const VERIFY_DISABLED = process.env.TWILIO_VERIFY_DISABLED === "1";
-
-// ---- Config helpers ----
-function getPublicHost(): string {
-  // Public HTTPS origin of your app (e.g., https://<your-repl>.replit.app)
-  // Set MY_HOST in env for consistent construction.
-  const h = process.env.MY_HOST?.trim();
-  if (!h) throw new Error("Missing MY_HOST env (e.g., https://your-host)");
-  return h.replace(/\/+$/, "");
-}
-
-function httpsToWss(url: string): string {
-  return url.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
-}
-
-function buildWsUrl(userId: string): string {
-  const base = getPublicHost(); // e.g. https://openai-realtime-agents-joriancunliffe.replit.app
-  // Single-port: just swap to wss and keep path
-  return `${httpsToWss(base)}/twilio-media?userId=${encodeURIComponent(userId)}`;
-}
-
 
 // ---- Very simple caller -> userId mapping (replace with your real source/DB) ----
 function resolveUserIdForCaller(e164From: string | null): string {
