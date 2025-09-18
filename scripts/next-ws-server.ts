@@ -3,6 +3,7 @@ import http from "http";
 import { parse as parseUrl } from "url";
 import next from "next";
 import { WebSocketServer, WebSocket } from "ws";
+import 'dotenv/config';
 
 // ---- Realtime config ----
 const REALTIME_MODEL = process.env.REALTIME_MODEL || "gpt-realtime";
