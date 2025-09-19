@@ -35,9 +35,10 @@ async function createEphemeralSession(initBody: Record<string, any>) {
   return r.json();
 }
 
-function buildMeta(req: NextRequest) {
-  const sid = cookies().get("sid")?.value || null;           // browser flow
-  const userId = req.headers.get("x-user-id") || null;       // Twilio/server flow
+async function buildMeta(req: NextRequest) {
+  const cookieStore = await cookies();
+  const sid = cookieStore.get("sid")?.value || null;           // browser flow
+  const userId = req.headers.get("x-user-id") || null;         // Twilio/server flow
   return {
     attachCalendar: Boolean(sid || userId), // Step 6 hint only; not sensitive
     hasSid: Boolean(sid),
@@ -49,7 +50,7 @@ function buildMeta(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     const data = await createEphemeralSession({});
-    return NextResponse.json({ ok: true, ...data, meta: buildMeta(req) });
+    return NextResponse.json({ ok: true, ...data, meta: await buildMeta(req) });
   } catch (error: any) {
     console.error("Error in /api/session GET:", error);
     return NextResponse.json(
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const data = await createEphemeralSession(body || {});
-    return NextResponse.json({ ok: true, ...data, meta: buildMeta(req) });
+    return NextResponse.json({ ok: true, ...data, meta: await buildMeta(req) });
   } catch (error: any) {
     console.error("Error in /api/session POST:", error);
     return NextResponse.json(
